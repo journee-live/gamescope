@@ -3007,6 +3007,7 @@ static bool vulkan_make_output_images( VulkanOutput_t *pOutput )
 {
 	CVulkanTexture::createFlags outputImageflags;
 	outputImageflags.bFlippable = !BIsNested();
+	outputImageflags.bMappable = true;
 	outputImageflags.bStorage = true;
 	outputImageflags.bTransferSrc = true; // for screenshots
 	outputImageflags.bSampled = true; // for pipewire blits
@@ -3104,7 +3105,7 @@ bool vulkan_make_output( VkSurfaceKHR surface )
 	
 	if ( BIsVRSession() || BIsHeadless() )
 	{
-		pOutput->outputFormat = VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+		pOutput->outputFormat = VK_FORMAT_R8G8B8A8_UNORM; //VK_FORMAT_A2B10G10R10_UNORM_PACK32;
 		vulkan_make_output_images( pOutput );
 	}
 	else if ( BIsSDLSession() )
@@ -3588,6 +3589,7 @@ bool vulkan_composite( const struct FrameInfo_t *frameInfo, std::shared_ptr<CVul
 		defer_sequence = 0;
 	}
 
+	printf("Partial: %i\n", partial);
 	auto compositeImage = partial ? g_output.outputImagesPartialOverlay[ g_output.nOutImage ] : g_output.outputImages[ g_output.nOutImage ];
 
 	auto cmdBuffer = g_device.commandBuffer();

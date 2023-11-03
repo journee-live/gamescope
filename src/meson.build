@@ -14,10 +14,12 @@ wayland_server = dependency('wayland-server', version: '>=1.21')
 wayland_protos = dependency('wayland-protocols', version: '>=1.17')
 xkbcommon = dependency('xkbcommon')
 thread_dep = dependency('threads')
-cap_dep = dependency('libcap', required: false)
+cap_dep = dependency('libcap')
 glm_dep = dependency('glm')
 sdl_dep = dependency('SDL2')
 stb_dep = dependency('stb')
+png_dep = dependency('libpng')
+
 
 wlroots_dep = dependency(
   'wlroots',
@@ -116,7 +118,7 @@ endif
       dep_xxf86vm, dep_xres, glm_dep, drm_dep, wayland_server,
       xkbcommon, thread_dep, sdl_dep, wlroots_dep,
       vulkan_dep, liftoff_dep, dep_xtst, dep_xmu, cap_dep, pipewire_dep, librt_dep,
-      stb_dep, displayinfo_dep, openvr_dep,
+      stb_dep, displayinfo_dep, openvr_dep, png_dep
     ],
     install: true,
   )
