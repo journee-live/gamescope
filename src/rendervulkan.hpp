@@ -166,6 +166,8 @@ public:
 	inline bool swapchainImage() { return m_bSwapchain; }
 	inline bool externalImage() { return m_bExternal; }
 	inline VkDeviceSize totalSize() const { return m_size; }
+	inline VkDeviceSize dedicatedSize() const { return m_dedicatedSize; }
+
 
 	inline uint32_t lumaOffset() const { return m_lumaOffset; }
 	inline uint32_t lumaRowPitch() const { return m_lumaPitch; }
@@ -208,6 +210,8 @@ private:
 
 	uint32_t m_unRowPitch = 0;
 	VkDeviceSize m_size = 0;
+	VkDeviceSize m_dedicatedSize = 0;
+
 
 	uint32_t m_lumaOffset = 0;
 	uint32_t m_lumaPitch = 0;
@@ -332,6 +336,8 @@ std::shared_ptr<CVulkanTexture> vulkan_create_texture_from_wlr_buffer( struct wl
 bool vulkan_composite( const struct FrameInfo_t *frameInfo, std::shared_ptr<CVulkanTexture> pScreenshotTexture, bool partial, bool deferred );
 std::shared_ptr<CVulkanTexture> vulkan_get_last_output_image( bool partial, bool defer );
 std::shared_ptr<CVulkanTexture> vulkan_acquire_screenshot_texture(uint32_t width, uint32_t height, bool exportable, uint32_t drmFormat, EStreamColorspace colorspace = k_EStreamColorspace_Unknown);
+
+void vulkan_allocate_streamer_textures( std::shared_ptr<CVulkanTexture> out_textures[3] );
 
 void vulkan_present_to_window( void );
 #if HAVE_OPENVR

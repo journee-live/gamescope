@@ -2075,6 +2075,8 @@ bool CVulkanTexture::BInit( uint32_t width, uint32_t height, uint32_t depth, uin
 		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
 	};
 
+  printf("Allocating texture with format %i", imageInfo.format);
+
 	assert( imageInfo.format != VK_FORMAT_UNDEFINED );
 
 	std::array<VkFormat, 2> formats = {
@@ -2239,6 +2241,7 @@ bool CVulkanTexture::BInit( uint32_t width, uint32_t height, uint32_t depth, uin
 	};
 
 	m_size = allocInfo.allocationSize;
+  // VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INF
 
 	VkDeviceMemory memoryHandle = VK_NULL_HANDLE;
 
@@ -2306,6 +2309,28 @@ bool CVulkanTexture::BInit( uint32_t width, uint32_t height, uint32_t depth, uin
 			return false;
 		}
 
+    uint32_t memoryTypeIndex = g_device.findMemoryType(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memRequirements.memoryTypeBits);
+    printf("Type index: %i", memoryTypeIndex);
+    // exit(1);
+    VkDeviceSize allocationSize = memRequirements.size;
+    VkDeviceSize totalAllocatedSize = allocationSize;
+
+    // Calculate the total allocated size for the texture
+    VkPhysicalDeviceMemoryProperties memoryProperties;
+    g_device.vk.GetPhysicalDeviceMemoryProperties(g_device.physDev(), &memoryProperties);
+
+    VkMemoryType memoryType = memoryProperties.memoryTypes[memoryTypeIndex];
+
+    VkDeviceSize heapSize = memoryProperties.memoryHeaps[memoryType.heapIndex].size;
+
+    if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+        totalAllocatedSize = allocationSize;
+    } else {
+        totalAllocatedSize = allocationSize * 2;
+    }
+
+    m_dedicatedSize = allocationSize;
+    
 		m_vkImageMemory = memoryHandle;
 	}
 	else
@@ -2375,7 +2400,7 @@ bool CVulkanTexture::BInit( uint32_t width, uint32_t height, uint32_t depth, uin
 		const VkMemoryGetFdInfoKHR memory_get_fd_info = {
 			.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
 			.memory = memoryHandle,
-			.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+			.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT,
 		};
 		res = g_device.vk.GetMemoryFdKHR(g_device.device(), &memory_get_fd_info, &dmabuf.fd[0]);
 		if ( res != VK_SUCCESS ) {
@@ -3012,6 +3037,7 @@ static bool vulkan_make_output_images( VulkanOutput_t *pOutput )
 	outputImageflags.bTransferSrc = true; // for screenshots
 	outputImageflags.bSampled = true; // for pipewire blits
 	outputImageflags.bSwapchain = BIsVRSession();
+	// outputImageflags.bExportable = true;
 
 	pOutput->outputImages.resize(3); // extra image for partial composition.
 	pOutput->outputImagesPartialOverlay.resize(3);
@@ -3078,7 +3104,26 @@ static bool vulkan_make_output_images( VulkanOutput_t *pOutput )
 		}
 	}
 
+
+	// g_device.device()
 	return true;
+}
+
+void vulkan_allocate_streamer_textures(std::shared_ptr<CVulkanTexture> out_textures[3]  ) {
+
+	CVulkanTexture::createFlags outputImageflags;
+	outputImageflags.bFlippable = !BIsNested();
+	outputImageflags.bMappable = false;
+	outputImageflags.bStorage = true;
+	outputImageflags.bTransferSrc = true; // for screenshots
+	outputImageflags.bSampled = true; // for pipewire blits
+	outputImageflags.bSwapchain = BIsVRSession();
+	outputImageflags.bExportable = true;
+
+  for (size_t textureIdx = 0; textureIdx < 3; ++textureIdx) {
+  	out_textures[textureIdx] = std::make_shared<CVulkanTexture>();
+  	out_textures[textureIdx]->BInit( g_nOutputWidth, g_nOutputHeight, 1u, VulkanFormatToDRM(g_output.outputFormat), outputImageflags );
+	}
 }
 
 bool vulkan_remake_output_images()

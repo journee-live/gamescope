@@ -2263,6 +2263,11 @@ static void paint_all(bool async) {
   pw_buffer = dequeue_pipewire_buffer();
 #endif
 
+  static std::shared_ptr<CVulkanTexture> StreamerTextures[3] = {0};
+  if (StreamerTextures[0] == nullptr) {
+    vulkan_allocate_streamer_textures(StreamerTextures);
+  }
+
   int nDynamicRefresh = g_nDynamicRefreshRate[drm_get_screen_type(&g_DRM)];
 
   int nTargetRefresh =
@@ -2303,6 +2308,9 @@ static void paint_all(bool async) {
   bNeedsFullComposite |= bNeedsNearest;
   bNeedsFullComposite |= bDrewCursor;
   bNeedsFullComposite |= g_bColorSliderInUse;
+
+  // Always the case when we are with the streamer.
+  bNeedsFullComposite = true;
 
   for (uint32_t i = 0; i < EOTF_Count; i++) {
     if (g_ColorMgmtLuts[i].HasLuts()) {
@@ -2348,6 +2356,11 @@ static void paint_all(bool async) {
       pPipewireTexture = pw_buffer->texture;
     }
 #endif
+
+    static int NextStreamerTexture = 0;
+
+    int StreamerTextureIdx = (NextStreamerTexture++) % 3; 
+    pPipewireTexture = StreamerTextures[StreamerTextureIdx];
 
     struct FrameInfo_t compositeFrameInfo = frameInfo;
 
@@ -2433,6 +2446,9 @@ static void paint_all(bool async) {
 
       auto tex = vulkan_get_last_output_image(false, bDefer);
 
+      // int file_descriptor = tex->dmabuf().fd[0];
+      // printf("File: %i", file_descriptor);
+
       struct gamescope_shmbuf {
         int32_t version;
         sem_t new_texture;       /* POSIX unnamed semaphore */
@@ -2440,7 +2456,13 @@ static void paint_all(bool async) {
         int32_t format;
         int32_t width;
         int32_t height;
-        uint8_t texture_mem[4069 * 4096 * 4];
+
+        // uint8_t texture_mem[4069 * 4096 * 4];
+
+        int32_t texture_handles[3];
+        int32_t latest_texture;
+
+        int32_t texture_size;
       };
 
       if (tex) {
@@ -2496,13 +2518,17 @@ static void paint_all(bool async) {
           shmbuf->format = fmt;
           shmbuf->width = tex->width();
           shmbuf->height = tex->height();
+
+          shmbuf->texture_handles[0] = StreamerTextures[0]->dmabuf().fd[0];
+          shmbuf->texture_handles[1] = StreamerTextures[1]->dmabuf().fd[0];
+          shmbuf->texture_handles[2] = StreamerTextures[2]->dmabuf().fd[0];
+
+          shmbuf->texture_size = StreamerTextures[0]->dedicatedSize();
         }
 
         // printf("Mapped: %i", mapped);
         if (sem_trywait(&shmbuf->wants_new_texture) == 0) {
-          memcpy(&shmbuf->texture_mem, mapped,
-                 4 * tex->width() * tex->height());
-
+          shmbuf->latest_texture = StreamerTextureIdx;
           sem_post(&shmbuf->new_texture);
         }
       }
