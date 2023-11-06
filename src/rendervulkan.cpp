@@ -2410,7 +2410,7 @@ bool CVulkanTexture::BInit( uint32_t width, uint32_t height, uint32_t depth, uin
 		};
 		res = g_device.vk.GetMemoryFdKHR(g_device.device(), &memory_get_fd_info, &dmabuf.fd[0]);
 		if ( res != VK_SUCCESS ) {
-			vk_errorf( res, "vkGetMemoryFdKHR failed" );
+			vk_errorf( res, "vkGetMemoryFdKHR failed tex" );
 			return false;
 		}
 
@@ -2696,12 +2696,12 @@ int CVulkanTexture::memoryFence()
 	const VkMemoryGetFdInfoKHR memory_get_fd_info = {
 		.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
 		.memory = m_vkImageMemory,
-		.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+		.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT,
 	};
 	int fence = -1;
 	VkResult res = g_device.vk.GetMemoryFdKHR(g_device.device(), &memory_get_fd_info, &fence);
 	if ( res != VK_SUCCESS ) {
-		fprintf( stderr, "vkGetMemoryFdKHR failed\n" );
+		fprintf( stderr, "vkGetMemoryFdKHR failed fence\n" );
 	}
 
 	return fence;
