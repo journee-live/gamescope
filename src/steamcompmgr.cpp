@@ -689,6 +689,9 @@ float focusedWindowOffsetY = 0.0f;
 uint32_t inputCounter;
 uint32_t lastPublishedInputCounter;
 
+int shm_handle = 0;
+struct gamescope_shmbuf *shmbuf = NULL;
+
 bool focusDirty = false;
 bool hasRepaint = false;
 bool hasRepaintNonBasePlane = false;
@@ -2359,7 +2362,7 @@ static void paint_all(bool async) {
 
     static int NextStreamerTexture = 0;
 
-    int StreamerTextureIdx = (NextStreamerTexture++) % 3; 
+    int StreamerTextureIdx = (NextStreamerTexture++) % 3;
     pPipewireTexture = StreamerTextures[StreamerTextureIdx];
 
     struct FrameInfo_t compositeFrameInfo = frameInfo;
@@ -2449,82 +2452,21 @@ static void paint_all(bool async) {
       // int file_descriptor = tex->dmabuf().fd[0];
       // printf("File: %i", file_descriptor);
 
-      struct gamescope_shmbuf {
-        int32_t version;
-        sem_t new_texture;       /* POSIX unnamed semaphore */
-        sem_t wants_new_texture; /* POSIX unnamed semaphore */
-        int32_t format;
-        int32_t width;
-        int32_t height;
-
-        // uint8_t texture_mem[4069 * 4096 * 4];
-
-        int32_t texture_handles[3];
-        int32_t latest_texture;
-
-        int32_t texture_size;
-      };
-
       if (tex) {
 
         int fmt = tex->format();
-        uint8_t *mapped = tex->mappedData();
 
-        static int shm_handle = 0;
-        static struct gamescope_shmbuf *shmbuf = NULL;
+        printf("Trying to open gamescope texture\n");
 
-        if (shm_handle == 0) {
-          printf("Trying to open gamescope texture\n");
+        shmbuf->format = fmt;
+        shmbuf->width = tex->width();
+        shmbuf->height = tex->height();
 
-          shm_unlink("/gscope_tex");
-          shm_handle = shm_open("/gscope_tex", O_CREAT | O_RDWR, 0);
-          if (shm_handle == -1) {
-            printf("Failed to open shm section\n");
-            exit(1);
-          }
+        shmbuf->texture_handles[0] = StreamerTextures[0]->dmabuf().fd[0];
+        shmbuf->texture_handles[1] = StreamerTextures[1]->dmabuf().fd[0];
+        shmbuf->texture_handles[2] = StreamerTextures[2]->dmabuf().fd[0];
 
-          printf("ShmHandle open success\n");
-
-          if (ftruncate(shm_handle, sizeof(struct gamescope_shmbuf)) == -1) {
-            printf("Failed to truncate gamescope shm buff\n");
-            exit(1);
-          }
-
-          printf("FTruncate success\n");
-
-          shmbuf = (struct gamescope_shmbuf *)mmap(
-              NULL, sizeof(struct gamescope_shmbuf), PROT_READ | PROT_WRITE,
-              MAP_SHARED, shm_handle, 0);
-
-          if (shmbuf == MAP_FAILED) {
-            printf("Failed to mmap gamescope shm buff\n");
-            exit(1);
-          }
-
-          printf("MMap success\n");
-
-          if (sem_init(&shmbuf->new_texture, 1, 0) == -1) {
-            printf("Failed to allocate sem\n");
-            exit(1);
-          }
-
-          printf("Sem init success\n");
-
-          if (sem_init(&shmbuf->wants_new_texture, 1, 0) == -1) {
-            printf("Failed to allocate sem\n");
-            exit(1);
-          }
-
-          shmbuf->format = fmt;
-          shmbuf->width = tex->width();
-          shmbuf->height = tex->height();
-
-          shmbuf->texture_handles[0] = StreamerTextures[0]->dmabuf().fd[0];
-          shmbuf->texture_handles[1] = StreamerTextures[1]->dmabuf().fd[0];
-          shmbuf->texture_handles[2] = StreamerTextures[2]->dmabuf().fd[0];
-
-          shmbuf->texture_size = StreamerTextures[0]->dedicatedSize();
-        }
+        shmbuf->texture_size = StreamerTextures[0]->dedicatedSize();
 
         // printf("Mapped: %i", mapped);
         if (sem_trywait(&shmbuf->wants_new_texture) == 0) {
@@ -6659,6 +6601,47 @@ void update_edid_prop() {
 
 void steamcompmgr_main(int argc, char **argv) {
   int readyPipeFD = -1;
+
+  shm_unlink("/gscope_tex");
+  shm_handle = shm_open("/gscope_tex", O_CREAT | O_RDWR, 0);
+  if (shm_handle == -1) {
+    printf("Failed to open shm section\n");
+    exit(1);
+  }
+
+  printf("ShmHandle open success\n");
+
+  if (ftruncate(shm_handle, sizeof(struct gamescope_shmbuf)) == -1) {
+    printf("Failed to truncate gamescope shm buff\n");
+    exit(1);
+  }
+
+  printf("FTruncate success\n");
+
+  shmbuf = (struct gamescope_shmbuf *)mmap(
+      NULL, sizeof(struct gamescope_shmbuf), PROT_READ | PROT_WRITE, MAP_SHARED,
+      shm_handle, 0);
+
+  if (shmbuf == MAP_FAILED) {
+    printf("Failed to mmap gamescope shm buff\n");
+    exit(1);
+  }
+
+  memset(shmbuf, 0, sizeof(struct gamescope_shmbuf));
+
+  if (sem_init(&shmbuf->new_texture, 1, 0) == -1) {
+    printf("Failed to allocate sem\n");
+    exit(1);
+  }
+
+  printf("Sem init success\n");
+
+  if (sem_init(&shmbuf->wants_new_texture, 1, 0) == -1) {
+    printf("Failed to allocate sem\n");
+    exit(1);
+  }
+
+  printf("MMap success\n");
 
   // Reset getopt() state
   optind = 1;

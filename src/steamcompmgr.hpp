@@ -1,8 +1,8 @@
 #include <stdint.h>
 
 extern "C" {
-#include <wlr/types/wlr_buffer.h>
 #include <wlr/render/wlr_texture.h>
+#include <wlr/types/wlr_buffer.h>
 }
 
 extern uint32_t currentOutputWidth;
@@ -25,10 +25,28 @@ void steamcompmgr_main(int argc, char **argv);
 
 #include <X11/extensions/Xfixes.h>
 
+#include "semaphore.h"
+
 struct _XDisplay;
 struct steamcompmgr_win_t;
 struct xwayland_ctx_t;
 class gamescope_xwayland_server_t;
+
+struct gamescope_shmbuf {
+  int32_t version;
+  sem_t new_texture;       /* POSIX unnamed semaphore */
+  sem_t wants_new_texture; /* POSIX unnamed semaphore */
+  int32_t format;
+  int32_t width;
+  int32_t height;
+
+  // uint8_t texture_mem[4069 * 4096 * 4];
+
+  int32_t texture_handles[3];
+  int32_t latest_texture;
+
+  int32_t texture_size;
+};
 
 static const uint32_t g_zposBase = 0;
 static const uint32_t g_zposOverride = 1;
@@ -41,82 +59,85 @@ extern bool g_bForceHDRSupportDebug;
 
 extern EStreamColorspace g_ForcedNV12ColorSpace;
 
-class MouseCursor
-{
+class MouseCursor {
 public:
-	explicit MouseCursor(xwayland_ctx_t *ctx);
+  explicit MouseCursor(xwayland_ctx_t *ctx);
 
-	int x() const;
-	int y() const;
+  int x() const;
+  int y() const;
 
-	void move(int x, int y);
-	void updatePosition();
-	void constrainPosition();
-	void resetPosition();
+  void move(int x, int y);
+  void updatePosition();
+  void constrainPosition();
+  void resetPosition();
 
-	void paint(steamcompmgr_win_t *window, steamcompmgr_win_t *fit, FrameInfo_t *frameInfo);
-	void setDirty();
+  void paint(steamcompmgr_win_t *window, steamcompmgr_win_t *fit,
+             FrameInfo_t *frameInfo);
+  void setDirty();
 
-	// Will take ownership of data.
-	bool setCursorImage(char *data, int w, int h, int hx, int hy);
-	bool setCursorImageByName(const char *name);
+  // Will take ownership of data.
+  bool setCursorImage(char *data, int w, int h, int hx, int hy);
+  bool setCursorImageByName(const char *name);
 
-	void hide() { m_lastMovedTime = 0; checkSuspension(); }
+  void hide() {
+    m_lastMovedTime = 0;
+    checkSuspension();
+  }
 
-	bool isHidden() { return m_hideForMovement || m_imageEmpty; }
+  bool isHidden() { return m_hideForMovement || m_imageEmpty; }
 
-	void forcePosition(int x, int y)
-	{
-		warp(x, y);
-		m_x = x;
-		m_y = y;
-	}
+  void forcePosition(int x, int y) {
+    warp(x, y);
+    m_x = x;
+    m_y = y;
+  }
 
-	void undirty() { getTexture(); }
+  void undirty() { getTexture(); }
 
-	xwayland_ctx_t *getCtx() const { return m_ctx; }
+  xwayland_ctx_t *getCtx() const { return m_ctx; }
 
-	bool needs_server_flush() const { return m_needs_server_flush; }
-	void inform_flush() { m_needs_server_flush = false; }
+  bool needs_server_flush() const { return m_needs_server_flush; }
+  void inform_flush() { m_needs_server_flush = false; }
 
 private:
-	void warp(int x, int y);
-	void checkSuspension();
+  void warp(int x, int y);
+  void checkSuspension();
 
-	void queryGlobalPosition(int &x, int &y);
-	void queryPositions(int &rootX, int &rootY, int &winX, int &winY);
-	void queryButtonMask(unsigned int &mask);
+  void queryGlobalPosition(int &x, int &y);
+  void queryPositions(int &rootX, int &rootY, int &winX, int &winY);
+  void queryButtonMask(unsigned int &mask);
 
-	bool getTexture();
+  bool getTexture();
 
-	void updateCursorFeedback( bool bForce = false );
+  void updateCursorFeedback(bool bForce = false);
 
-	int m_x = 0, m_y = 0;
-	int m_hotspotX = 0, m_hotspotY = 0;
+  int m_x = 0, m_y = 0;
+  int m_hotspotX = 0, m_hotspotY = 0;
 
-	std::shared_ptr<CVulkanTexture> m_texture;
-	bool m_dirty;
-	bool m_imageEmpty;
+  std::shared_ptr<CVulkanTexture> m_texture;
+  bool m_dirty;
+  bool m_imageEmpty;
 
-	unsigned int m_lastMovedTime = 0;
-	bool m_hideForMovement;
+  unsigned int m_lastMovedTime = 0;
+  bool m_hideForMovement;
 
-	PointerBarrier m_scaledFocusBarriers[4] = { None };
+  PointerBarrier m_scaledFocusBarriers[4] = {None};
 
-	xwayland_ctx_t *m_ctx;
+  xwayland_ctx_t *m_ctx;
 
-	int m_lastX = 0;
-	int m_lastY = 0;
+  int m_lastX = 0;
+  int m_lastY = 0;
 
-	bool m_bCursorVisibleFeedback = false;
-	bool m_needs_server_flush = false;
+  bool m_bCursorVisibleFeedback = false;
+  bool m_needs_server_flush = false;
 };
 
-extern std::vector< wlr_surface * > wayland_surfaces_deleted;
+extern std::vector<wlr_surface *> wayland_surfaces_deleted;
 
 extern bool hasFocusWindow;
 
-// These are used for touch scaling, so it's really the window that's focused for touch
+// These are used for touch scaling, so it's really the window that's focused
+// for touch
 extern float focusedWindowScaleX;
 extern float focusedWindowScaleY;
 extern float focusedWindowOffsetX;
@@ -126,20 +147,28 @@ extern bool g_bFSRActive;
 
 extern uint32_t inputCounter;
 
-void nudge_steamcompmgr( void );
-void take_screenshot( void );
-void force_repaint( void );
+extern int shm_handle;
+extern struct gamescope_shmbuf *shmbuf;
 
-extern void mangoapp_update( uint64_t visible_frametime, uint64_t app_frametime_ns, uint64_t latency_ns );
+void nudge_steamcompmgr(void);
+void take_screenshot(void);
+void force_repaint(void);
+
+extern void mangoapp_update(uint64_t visible_frametime,
+                            uint64_t app_frametime_ns, uint64_t latency_ns);
 gamescope_xwayland_server_t *steamcompmgr_get_focused_server();
-struct wlr_surface *steamcompmgr_get_server_input_surface( size_t idx );
-wlserver_vk_swapchain_feedback* steamcompmgr_get_base_layer_swapchain_feedback();
+struct wlr_surface *steamcompmgr_get_server_input_surface(size_t idx);
+wlserver_vk_swapchain_feedback *
+steamcompmgr_get_base_layer_swapchain_feedback();
 
-struct wlserver_x11_surface_info *lookup_x11_surface_info_from_xid( gamescope_xwayland_server_t *xwayland_server, uint32_t xid );
+struct wlserver_x11_surface_info *
+lookup_x11_surface_info_from_xid(gamescope_xwayland_server_t *xwayland_server,
+                                 uint32_t xid);
 
 extern uint64_t g_SteamCompMgrVBlankTime;
 extern pid_t focusWindow_pid;
 
-void init_xwayland_ctx(uint32_t serverId, gamescope_xwayland_server_t *xwayland_server);
+void init_xwayland_ctx(uint32_t serverId,
+                       gamescope_xwayland_server_t *xwayland_server);
 
 extern int g_nAsyncFlipsEnabled;
