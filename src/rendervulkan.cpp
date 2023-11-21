@@ -11,6 +11,7 @@
 #include <bitset>
 #include <thread>
 #include <vulkan/vulkan_core.h>
+#include <xf86drm.h>
 
 // Used to remove the config struct alignment specified by the NIS header
 #define NIS_ALIGNED(x)
@@ -636,6 +637,8 @@ bool CVulkanDevice::selectPhysDev(VkSurfaceKHR surface)
 	if (deviceCount < physDevs.size())
 		physDevs.resize(deviceCount);
 
+	printf("Device count: %i\n", deviceCount);
+
 	bool bTryComputeOnly = true;
 
 	// In theory vkBasalt might want to filter out compute-only queue families to force our hand here
@@ -705,6 +708,7 @@ bool CVulkanDevice::selectPhysDev(VkSurfaceKHR surface)
 
 	VkPhysicalDeviceProperties props;
 	vk.GetPhysicalDeviceProperties( m_physDev, &props );
+	
 	vk_log.infof( "selecting physical device '%s': queue family %x", props.deviceName, m_queueFamily );
 
 	return true;
@@ -741,7 +745,7 @@ bool CVulkanDevice::createDevice()
 
 	vk_log.infof( "physical device %s DRM format modifiers", m_bSupportsModifiers ? "supports" : "does not support" );
 
-	if ( requires_drm && hasDrmProps ) {
+	if ( hasDrmProps ) {
 		VkPhysicalDeviceDrmPropertiesEXT drmProps = {
 			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT,
 		};
@@ -751,7 +755,7 @@ bool CVulkanDevice::createDevice()
 		};
 		vk.GetPhysicalDeviceProperties2( physDev(), &props2 );
 
-		if ( !BIsNested() && !drmProps.hasPrimary ) {
+		if ( !drmProps.hasPrimary ) {
 			vk_log.errorf( "physical device has no primary node" );
 			return false;
 		}
@@ -760,13 +764,13 @@ bool CVulkanDevice::createDevice()
 			return false;
 		}
 
-		dev_t renderDevId = makedev( drmProps.renderMajor, drmProps.renderMinor );
+		dev_t renderDevId = makedev( drmProps.renderMajor, drmProps.renderMinor);
 		drmDevice *drmDev = nullptr;
 		if (drmGetDeviceFromDevId(renderDevId, 0, &drmDev) != 0) {
 			vk_log.errorf( "drmGetDeviceFromDevId() failed" );
 			return false;
 		}
-		assert(drmDev->available_nodes & (1 << DRM_NODE_RENDER));
+		// assert(drmDev->available_nodes & (1 << DRM_NODE_RENDER));
 		const char *drmRenderName = drmDev->nodes[DRM_NODE_RENDER];
 
 		m_drmRendererFd = open( drmRenderName, O_RDWR | O_CLOEXEC );
@@ -775,6 +779,10 @@ bool CVulkanDevice::createDevice()
 			vk_log.errorf_errno( "failed to open DRM render node" );
 			return false;
 		}
+
+		// m_drmRendererFd = -1; 
+
+		// drmProps.hasPrimary = 0;
 
 		if ( drmProps.hasPrimary ) {
 			m_bHasDrmPrimaryDevId = true;
@@ -838,7 +846,7 @@ bool CVulkanDevice::createDevice()
 
   if(requires_drm )
 	{
-    enabledExtensions.push_back( VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME );
+    // enabledExtensions.push_back( VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME );
   }
   
 	enabledExtensions.push_back( VK_EXT_ROBUSTNESS_2_EXTENSION_NAME );
@@ -3640,7 +3648,7 @@ bool vulkan_composite( const struct FrameInfo_t *frameInfo, std::shared_ptr<CVul
 		defer_sequence = 0;
 	}
 
-	printf("Partial: %i\n", partial);
+	// printf("Partial: %i\n", partial);
 	auto compositeImage = partial ? g_output.outputImagesPartialOverlay[ g_output.nOutImage ] : g_output.outputImages[ g_output.nOutImage ];
 
 	auto cmdBuffer = g_device.commandBuffer();
@@ -3978,104 +3986,158 @@ struct wlr_renderer *vulkan_renderer_create( void )
 	return &renderer->base;
 }
 
-std::shared_ptr<CVulkanTexture> vulkan_create_texture_from_wlr_buffer( struct wlr_buffer *buf )
-{
-
-	struct wlr_dmabuf_attributes dmabuf = {0};
-	if ( wlr_buffer_get_dmabuf( buf, &dmabuf ) )
-	{
-		return vulkan_create_texture_from_dmabuf( &dmabuf );
+vulkan_mapped_wlr_buffer::~vulkan_mapped_wlr_buffer() {
+	if(IsDataPtr) {
+		// g_device.vk.UnmapMemory( g_device.device(), MappedData.DataPtr.BufferMemory);
+		// g_device.vk.DestroyBuffer(g_device.device(), MappedData.DataPtr.Buffer, nullptr);
+		// g_device.vk.FreeMemory(g_device.device(), MappedData.DataPtr.BufferMemory, nullptr);
 	}
+}
 
-	VkResult result;
+void vulkan_mapped_wlr_buffer::upload_buffer_to_texture(struct wlr_buffer *buf) {
+	if(!IsDataPtr) {
+		// No-op. The data is already mapped using the drm fd.
+		return;
+	}
 
 	void *src;
 	uint32_t drmFormat;
 	size_t stride;
 	if ( !wlr_buffer_begin_data_ptr_access( buf, WLR_BUFFER_DATA_PTR_ACCESS_READ, &src, &drmFormat, &stride ) )
 	{
-		return 0;
+		return;
 	}
 
-	uint32_t width = buf->width;
-	uint32_t height = buf->height;
+	size_t InBufferSize = stride * buf->height; 
+	assert(InBufferSize == this->MappedData.DataPtr.BufferSize);
 
-	VkBufferCreateInfo bufferCreateInfo = {
-		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-		.size = stride * height,
-		.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-	};
-	VkBuffer buffer;
-	result = g_device.vk.CreateBuffer( g_device.device(), &bufferCreateInfo, nullptr, &buffer );
-	if ( result != VK_SUCCESS )
-	{
-		wlr_buffer_end_data_ptr_access( buf );
-		return 0;
-	}
+	// void *dst;
+	// VkResult result = g_device.vk.MapMemory( g_device.device(), this->MappedData.DataPtr.BufferMemory, 0, VK_WHOLE_SIZE, 0, &dst );
+	// if ( result != VK_SUCCESS )
+	// {
+	// 	wlr_buffer_end_data_ptr_access( buf );
+	// 	return;
+	// }
 
-	VkMemoryRequirements memRequirements;
-	g_device.vk.GetBufferMemoryRequirements(g_device.device(), buffer, &memRequirements);
+	memcpy( this->MappedData.DataPtr.MappedMem, src, InBufferSize );
 
-	uint32_t memTypeIndex =  g_device.findMemoryType(VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, memRequirements.memoryTypeBits );
-	if ( memTypeIndex == ~0u )
-	{
-		wlr_buffer_end_data_ptr_access( buf );
-		return 0;
-	}
-
-	VkMemoryAllocateInfo allocInfo = {
-		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-		.allocationSize = memRequirements.size,
-		.memoryTypeIndex = memTypeIndex,
-	};
-
-	VkDeviceMemory bufferMemory;
-	result = g_device.vk.AllocateMemory( g_device.device(), &allocInfo, nullptr, &bufferMemory);
-	if ( result != VK_SUCCESS )
-	{
-		wlr_buffer_end_data_ptr_access( buf );
-		return 0;
-	}
-
-	result = g_device.vk.BindBufferMemory( g_device.device(), buffer, bufferMemory, 0 );
-	if ( result != VK_SUCCESS )
-	{
-		wlr_buffer_end_data_ptr_access( buf );
-		return 0;
-	}
-
-	void *dst;
-	result = g_device.vk.MapMemory( g_device.device(), bufferMemory, 0, VK_WHOLE_SIZE, 0, &dst );
-	if ( result != VK_SUCCESS )
-	{
-		wlr_buffer_end_data_ptr_access( buf );
-		return 0;
-	}
-
-	memcpy( dst, src, stride * height );
-
-	g_device.vk.UnmapMemory( g_device.device(), bufferMemory );
-
-	wlr_buffer_end_data_ptr_access( buf );
-
-	std::shared_ptr<CVulkanTexture> pTex = std::make_shared<CVulkanTexture>();
-	CVulkanTexture::createFlags texCreateFlags;
-	texCreateFlags.bSampled = true;
-	texCreateFlags.bTransferDst = true;
-	if ( pTex->BInit( width, height, 1u, drmFormat, texCreateFlags ) == false )
-		return nullptr;
-
+	// g_device.vk.UnmapMemory( g_device.device(), this->MappedData.DataPtr.BufferMemory);
+	// if ( result != VK_SUCCESS )
+	// {
+	// 	wlr_buffer_end_data_ptr_access( buf );
+	// 	return;
+	// }
+	
 	auto cmdBuffer = g_device.commandBuffer();
-
-	cmdBuffer->copyBufferToImage( buffer, 0, stride / DRMFormatGetBPP(drmFormat), pTex);
-	// TODO: Sync this copyBufferToImage
+	cmdBuffer->copyBufferToImage( this->MappedData.DataPtr.Buffer, 0, stride / DRMFormatGetBPP(drmFormat), this->Texture);
 
 	uint64_t sequence = g_device.submit(std::move(cmdBuffer));
 
 	g_device.wait(sequence);
+	
+	wlr_buffer_end_data_ptr_access( buf );
+}
 
-	g_device.vk.DestroyBuffer(g_device.device(), buffer, nullptr);
-	g_device.vk.FreeMemory(g_device.device(), bufferMemory, nullptr);
+std::shared_ptr<vulkan_mapped_wlr_buffer> vulkan_create_texture_from_wlr_buffer( struct wlr_buffer *buf )
+{
 
-	return pTex;
+	std::shared_ptr<vulkan_mapped_wlr_buffer> OutBuffer = std::make_shared<vulkan_mapped_wlr_buffer>();
+	OutBuffer->IsDataPtr = false;
+	
+	struct wlr_dmabuf_attributes dmabuf = {0};
+	if ( wlr_buffer_get_dmabuf( buf, &dmabuf ) )
+	{
+		printf("from dma buf\n");
+		OutBuffer->Texture = vulkan_create_texture_from_dmabuf( &dmabuf );
+	}
+	else 
+	{
+		printf("Trying from wlr_buffer\n");
+		VkResult result;
+
+		void *src;
+		uint32_t drmFormat;
+		size_t stride;
+		if ( !wlr_buffer_begin_data_ptr_access( buf, WLR_BUFFER_DATA_PTR_ACCESS_READ, &src, &drmFormat, &stride ) )
+		{
+			printf("Data access failed\n");
+			return 0;
+		}
+
+		uint32_t width = buf->width;
+		uint32_t height = buf->height;
+
+
+		VkBufferCreateInfo bufferCreateInfo = {
+			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+			.size = stride * height,
+			.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		};
+		VkBuffer buffer;
+		result = g_device.vk.CreateBuffer( g_device.device(), &bufferCreateInfo, nullptr, &buffer );
+		if ( result != VK_SUCCESS )
+		{
+			printf("Create buffer failed\n");
+
+			wlr_buffer_end_data_ptr_access( buf );
+			return 0;
+		}
+
+		VkMemoryRequirements memRequirements;
+		g_device.vk.GetBufferMemoryRequirements(g_device.device(), buffer, &memRequirements);
+
+		uint32_t memTypeIndex =  g_device.findMemoryType(VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, memRequirements.memoryTypeBits );
+		if ( memTypeIndex == ~0u )
+		{
+			wlr_buffer_end_data_ptr_access( buf );
+			return 0;
+		}
+
+		VkMemoryAllocateInfo allocInfo = {
+			.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+			.allocationSize = memRequirements.size,
+			.memoryTypeIndex = memTypeIndex,
+		};
+
+		VkDeviceMemory bufferMemory;
+		result = g_device.vk.AllocateMemory( g_device.device(), &allocInfo, nullptr, &bufferMemory);
+		if ( result != VK_SUCCESS )
+		{
+			wlr_buffer_end_data_ptr_access( buf );
+			return 0;
+		}
+	
+		result = g_device.vk.BindBufferMemory( g_device.device(), buffer, bufferMemory, 0 );
+		if ( result != VK_SUCCESS )
+		{
+			wlr_buffer_end_data_ptr_access( buf );
+			return 0;
+		}
+			
+		wlr_buffer_end_data_ptr_access( buf );
+
+		std::shared_ptr<CVulkanTexture> pTex = std::make_shared<CVulkanTexture>();
+		CVulkanTexture::createFlags texCreateFlags;
+		texCreateFlags.bSampled = true;
+		texCreateFlags.bTransferDst = true;
+		if ( pTex->BInit( width, height, 1u, drmFormat, texCreateFlags ) == false )
+			return nullptr;
+
+
+		void *dst;
+		result = g_device.vk.MapMemory( g_device.device(), bufferMemory, 0, VK_WHOLE_SIZE, 0, &dst );
+		if ( result != VK_SUCCESS )
+		{
+			return nullptr;
+		}
+
+		OutBuffer->Texture = pTex;
+		OutBuffer->IsDataPtr = true;
+		OutBuffer->MappedData.DataPtr.Buffer = buffer;
+		OutBuffer->MappedData.DataPtr.BufferMemory = bufferMemory;
+		OutBuffer->MappedData.DataPtr.MappedMem = dst;
+		OutBuffer->MappedData.DataPtr.BufferSize = stride * height;
+	}
+
+	return OutBuffer;
 }

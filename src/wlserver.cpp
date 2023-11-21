@@ -158,6 +158,8 @@ void xwayland_surface_commit(struct wlr_surface *wlr_surface) {
 
 	struct wlr_buffer *buf = wlr_buffer_lock( tex->buf );
 
+	// printf("Got commit %p\n", buf);
+
 	gpuvis_trace_printf( "xwayland_surface_commit wlr_surface %p", wlr_surface );
 
 	wlserver_x11_surface_info *wlserver_x11_surface_info = get_wl_surface_info(wlr_surface)->x11_surface;
@@ -486,6 +488,7 @@ static void handle_wl_surface_destroy( struct wl_listener *l, void *data )
 static void wlserver_new_surface(struct wl_listener *l, void *data)
 {
 	struct wlr_surface *wlr_surf = (struct wlr_surface *)data;
+
 	uint32_t id = wl_resource_get_id(wlr_surf->resource);
 
 	wlserver_wl_surface_info *wl_surface_info = new wlserver_wl_surface_info;

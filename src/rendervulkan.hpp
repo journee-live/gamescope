@@ -329,9 +329,35 @@ bool vulkan_init(VkInstance instance, VkSurfaceKHR surface);
 bool vulkan_init_formats(void);
 bool vulkan_make_output(VkSurfaceKHR surface);
 
+
+struct vulkan_mapped_wlr_buffer {
+	std::shared_ptr<CVulkanTexture> Texture;
+
+	union {
+		struct {
+			int smth;
+		} DRM;
+
+		struct {
+			VkBuffer Buffer;
+			VkDeviceMemory BufferMemory;
+			void *MappedMem;
+			size_t BufferSize;
+		} DataPtr;
+		
+	} MappedData;
+
+	bool IsDataPtr;
+
+	void upload_buffer_to_texture(struct wlr_buffer *buf);
+
+	~vulkan_mapped_wlr_buffer();
+};
+
+
 std::shared_ptr<CVulkanTexture> vulkan_create_texture_from_dmabuf( struct wlr_dmabuf_attributes *pDMA );
 std::shared_ptr<CVulkanTexture> vulkan_create_texture_from_bits( uint32_t width, uint32_t height, uint32_t contentWidth, uint32_t contentHeight, uint32_t drmFormat, CVulkanTexture::createFlags texCreateFlags, void *bits );
-std::shared_ptr<CVulkanTexture> vulkan_create_texture_from_wlr_buffer( struct wlr_buffer *buf );
+std::shared_ptr<vulkan_mapped_wlr_buffer> vulkan_create_texture_from_wlr_buffer( struct wlr_buffer *buf );
 
 bool vulkan_composite( const struct FrameInfo_t *frameInfo, std::shared_ptr<CVulkanTexture> pScreenshotTexture, bool partial, bool deferred );
 std::shared_ptr<CVulkanTexture> vulkan_get_last_output_image( bool partial, bool defer );

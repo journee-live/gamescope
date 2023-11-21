@@ -592,19 +592,20 @@ struct commit_t {
 
   GamescopeAppTextureColorspace colorspace() const {
     VkColorSpaceKHR colorspace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-    if (feedback && vulkanTex)
+    if (feedback && mappedWlrBuffer)
       colorspace = feedback->vk_colorspace;
 
-    if (!vulkanTex)
+    if (!mappedWlrBuffer)
       return GAMESCOPE_APP_TEXTURE_COLORSPACE_LINEAR;
 
-    return VkColorSpaceToGamescopeAppTextureColorSpace(vulkanTex->format(),
+    return VkColorSpaceToGamescopeAppTextureColorSpace(mappedWlrBuffer->Texture->format(),
                                                        colorspace);
   }
 
   struct wlr_buffer *buf = nullptr;
   uint32_t fb_id = 0;
-  std::shared_ptr<CVulkanTexture> vulkanTex;
+  std::shared_ptr<vulkan_mapped_wlr_buffer> mappedWlrBuffer;
+
   uint64_t commitID = 0;
   bool done = false;
   bool async = false;
@@ -793,7 +794,7 @@ static bool useXRes = true;
 struct wlr_buffer_map_entry {
   struct wl_listener listener;
   struct wlr_buffer *buf;
-  std::shared_ptr<CVulkanTexture> vulkanTex;
+  std::shared_ptr<vulkan_mapped_wlr_buffer> mappedWlrBuffer;
   uint32_t fb_id;
 };
 
@@ -882,21 +883,29 @@ retry : {
 
   gpuvis_trace_begin_ctx_printf(entry.commitID, "wait fence");
   struct pollfd fd = {entry.fence, POLLIN, 0};
-  int ret = poll(&fd, 1, 100);
+  printf("Polling frame now\n");
+  int ret = 0;
+  // int ret = poll(&fd, 1, 100);
   if (ret < 0) {
+    printf("Poll failed: %i\n", ret);
     xwm_log.errorf_errno("failed to poll fence FD");
   }
   gpuvis_trace_end_ctx_printf(entry.commitID, "wait fence");
 
   close(entry.fence);
 
+
+
   uint64_t frametime;
-  if (entry.mangoapp_nudge) {
     uint64_t now = get_time_in_nanos();
     static uint64_t lastFrameTime = now;
     frametime = now - lastFrameTime;
     lastFrameTime = now;
-  }
+
+  printf("FrameTime: %d\n", frametime);
+  
+   if (entry.mangoapp_nudge) {
+ }
 
   {
     std::unique_lock<std::mutex> lock(entry.doneCommits->listCommitsDoneLock);
@@ -1118,6 +1127,7 @@ static std::shared_ptr<commit_t> import_commit(
     struct wlr_surface *surf, struct wlr_buffer *buf, bool async,
     std::shared_ptr<wlserver_vk_swapchain_feedback> swapchain_feedback,
     std::vector<struct wl_resource *> presentation_feedbacks) {
+
   std::shared_ptr<commit_t> commit = std::make_shared<commit_t>();
   std::unique_lock<std::mutex> lock(wlr_buffer_map_lock);
 
@@ -1130,8 +1140,11 @@ static std::shared_ptr<commit_t> import_commit(
 
   auto it = wlr_buffer_map.find(buf);
   if (it != wlr_buffer_map.end()) {
-    commit->vulkanTex = it->second.vulkanTex;
+    commit->mappedWlrBuffer = it->second.mappedWlrBuffer;
     commit->fb_id = it->second.fb_id;
+
+    // Refresh the content of the texture using the wlr_buffer.
+    commit->mappedWlrBuffer->upload_buffer_to_texture(buf);
 
     /* Unlock here to avoid deadlock [1],
      * drm_lock_fbid calls wlserver_lock.
@@ -1162,8 +1175,10 @@ static std::shared_ptr<commit_t> import_commit(
    *		 valid in all cases, even after a rehash." */
   lock.unlock();
 
-  commit->vulkanTex = vulkan_create_texture_from_wlr_buffer(buf);
-  assert(commit->vulkanTex);
+  commit->mappedWlrBuffer = vulkan_create_texture_from_wlr_buffer(buf);
+  commit->mappedWlrBuffer->upload_buffer_to_texture(buf);
+
+  assert(commit->mappedWlrBuffer);
 
   struct wlr_dmabuf_attributes dmabuf = {0};
   if (BIsNested() == false && wlr_buffer_get_dmabuf(buf, &dmabuf)) {
@@ -1178,7 +1193,7 @@ static std::shared_ptr<commit_t> import_commit(
 
   entry.listener.notify = destroy_buffer;
   entry.buf = buf;
-  entry.vulkanTex = commit->vulkanTex;
+  entry.mappedWlrBuffer = commit->mappedWlrBuffer;
   entry.fb_id = commit->fb_id;
 
   wlserver_lock();
@@ -1799,7 +1814,7 @@ static void paint_cached_base_layer(const std::shared_ptr<commit_t> &commit,
   layer->opacity = base.opacity * flOpacityScale;
 
   layer->colorspace = commit->colorspace();
-  layer->tex = commit->vulkanTex;
+  layer->tex = commit->mappedWlrBuffer->Texture;
   layer->fbid = commit->fb_id;
 
   layer->linearFilter = true;
@@ -1895,8 +1910,8 @@ static void paint_window(steamcompmgr_win_t *w, steamcompmgr_win_t *scaleW,
     // are using the bypass layer, we don't get that, so we need to handle
     // this case explicitly.
     if (w == scaleW) {
-      sourceWidth = lastCommit->vulkanTex->width();
-      sourceHeight = lastCommit->vulkanTex->height();
+      sourceWidth = lastCommit->mappedWlrBuffer->Texture->width();
+      sourceHeight = lastCommit->mappedWlrBuffer->Texture->height();
     } else {
       sourceWidth = scaleW->xwayland().a.width;
       sourceHeight = scaleW->xwayland().a.height;
@@ -1997,7 +2012,7 @@ static void paint_window(steamcompmgr_win_t *w, steamcompmgr_win_t *scaleW,
     layer->zpos = g_zposExternalOverlay;
   }
 
-  layer->tex = lastCommit->vulkanTex;
+  layer->tex = lastCommit->mappedWlrBuffer->Texture;
   layer->fbid = lastCommit->fb_id;
 
   layer->linearFilter =
@@ -2069,6 +2084,7 @@ static void paint_all(bool async) {
     frameCounter = 0;
 
     stats_printf("fps=%f\n", currentFrameRate);
+    printf("fps=%f\n", currentFrameRate);
 
     if (window_is_steam(w)) {
       stats_printf("focus=steam\n");
@@ -2426,7 +2442,7 @@ static void paint_all(bool async) {
     bool bResult = vulkan_composite(&compositeFrameInfo, pPipewireTexture,
                                     !bNeedsFullComposite, bDefer);
 
-    printf("Composite result: %i\n", bResult);
+    // printf("Composite result: %i\n", bResult);
 
     g_bWasCompositing = true;
 
@@ -2448,15 +2464,9 @@ static void paint_all(bool async) {
       }
 
       auto tex = vulkan_get_last_output_image(false, bDefer);
-
-      // int file_descriptor = tex->dmabuf().fd[0];
-      // printf("File: %i", file_descriptor);
-
+      
       if (tex) {
-
         int fmt = tex->format();
-
-        printf("Trying to open gamescope texture\n");
 
         shmbuf->format = fmt;
         shmbuf->width = tex->width();
@@ -5679,7 +5689,8 @@ void update_wayland_res(CommitDoneList_t *doneCommits, steamcompmgr_win_t *w,
     if (wlr_buffer_get_dmabuf(buf, &dmabuf)) {
       fence = dup(dmabuf.fd[0]);
     } else {
-      fence = newCommit->vulkanTex->memoryFence();
+      // TODO: Make this check the device to see whether the tex is uploaded.
+      fence = newCommit->mappedWlrBuffer->Texture->memoryFence();
     }
 
     // Whether or not to nudge mango app when this commit is done.
