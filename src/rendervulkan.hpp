@@ -335,7 +335,7 @@ struct vulkan_mapped_wlr_buffer {
 
 	union {
 		struct {
-			int smth;
+			int fence;
 		} DRM;
 
 		struct {
@@ -343,6 +343,7 @@ struct vulkan_mapped_wlr_buffer {
 			VkDeviceMemory BufferMemory;
 			void *MappedMem;
 			size_t BufferSize;
+			int LastCpySequence;
 		} DataPtr;
 		
 	} MappedData;
@@ -350,6 +351,8 @@ struct vulkan_mapped_wlr_buffer {
 	bool IsDataPtr;
 
 	void upload_buffer_to_texture(struct wlr_buffer *buf);
+
+	void poll_buffer();
 
 	~vulkan_mapped_wlr_buffer();
 };

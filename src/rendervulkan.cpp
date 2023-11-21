@@ -1,5 +1,6 @@
 // Initialize Vulkan and composite stuff with a compute queue
 
+#include <sys/poll.h>
 #include <cassert>
 #include <fcntl.h>
 #include <unistd.h>
@@ -3994,9 +3995,22 @@ vulkan_mapped_wlr_buffer::~vulkan_mapped_wlr_buffer() {
 	}
 }
 
+void vulkan_mapped_wlr_buffer::poll_buffer() {
+	if(IsDataPtr) {
+		g_device.wait(this->MappedData.DataPtr.LastCpySequence);
+	} else {
+	  struct pollfd fd = {this->MappedData.DRM.fence, POLLIN, 0};
+	  (void)poll(&fd, 1, 100); 
+		close(this->MappedData.DRM.fence);
+	}
+}
+
 void vulkan_mapped_wlr_buffer::upload_buffer_to_texture(struct wlr_buffer *buf) {
 	if(!IsDataPtr) {
-		// No-op. The data is already mapped using the drm fd.
+		struct wlr_dmabuf_attributes dmabuf = {0};
+    if (wlr_buffer_get_dmabuf(buf, &dmabuf)) {
+      this->MappedData.DRM.fence = dup(dmabuf.fd[0]);
+		}
 		return;
 	}
 
@@ -4020,7 +4034,7 @@ void vulkan_mapped_wlr_buffer::upload_buffer_to_texture(struct wlr_buffer *buf) 
 	// }
 
 	memcpy( this->MappedData.DataPtr.MappedMem, src, InBufferSize );
-
+	wlr_buffer_end_data_ptr_access( buf );
 	// g_device.vk.UnmapMemory( g_device.device(), this->MappedData.DataPtr.BufferMemory);
 	// if ( result != VK_SUCCESS )
 	// {
@@ -4030,12 +4044,7 @@ void vulkan_mapped_wlr_buffer::upload_buffer_to_texture(struct wlr_buffer *buf) 
 	
 	auto cmdBuffer = g_device.commandBuffer();
 	cmdBuffer->copyBufferToImage( this->MappedData.DataPtr.Buffer, 0, stride / DRMFormatGetBPP(drmFormat), this->Texture);
-
-	uint64_t sequence = g_device.submit(std::move(cmdBuffer));
-
-	g_device.wait(sequence);
-	
-	wlr_buffer_end_data_ptr_access( buf );
+	this->MappedData.DataPtr.LastCpySequence = g_device.submit(std::move(cmdBuffer));
 }
 
 std::shared_ptr<vulkan_mapped_wlr_buffer> vulkan_create_texture_from_wlr_buffer( struct wlr_buffer *buf )

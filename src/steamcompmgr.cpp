@@ -837,7 +837,7 @@ private:
 
 struct WaitListEntry_t {
   CommitDoneList_t *doneCommits;
-  int fence;
+  std::shared_ptr<vulkan_mapped_wlr_buffer> mapped_wlr_buffer;
   // Josh: Whether or not to nudge mangoapp that we got
   // a frame as soon as we know this commit is done.
   // This could technically be out of date if we change windows
@@ -882,19 +882,16 @@ retry : {
   assert(bFound == true);
 
   gpuvis_trace_begin_ctx_printf(entry.commitID, "wait fence");
-  struct pollfd fd = {entry.fence, POLLIN, 0};
+  // struct pollfd fd = {entry.fence, POLLIN, 0};
   printf("Polling frame now\n");
   int ret = 0;
+  entry.mapped_wlr_buffer->poll_buffer();
   // int ret = poll(&fd, 1, 100);
   if (ret < 0) {
     printf("Poll failed: %i\n", ret);
     xwm_log.errorf_errno("failed to poll fence FD");
   }
   gpuvis_trace_end_ctx_printf(entry.commitID, "wait fence");
-
-  close(entry.fence);
-
-
 
   uint64_t frametime;
     uint64_t now = get_time_in_nanos();
@@ -5683,15 +5680,15 @@ void update_wayland_res(CommitDoneList_t *doneCommits, steamcompmgr_win_t *w,
                     std::move(reslistentry.feedback),
                     std::move(reslistentry.presentation_feedbacks));
 
-  int fence = -1;
+  // int fence = -1;
   if (newCommit) {
-    struct wlr_dmabuf_attributes dmabuf = {0};
-    if (wlr_buffer_get_dmabuf(buf, &dmabuf)) {
-      fence = dup(dmabuf.fd[0]);
-    } else {
-      // TODO: Make this check the device to see whether the tex is uploaded.
-      fence = newCommit->mappedWlrBuffer->Texture->memoryFence();
-    }
+    // struct wlr_dmabuf_attributes dmabuf = {0};
+    // if (wlr_buffer_get_dmabuf(buf, &dmabuf)) {
+    //   fence = dup(dmabuf.fd[0]);
+    // } else {
+    //   // TODO: Make this check the device to see whether the tex is uploaded.
+    //   fence = newCommit->mappedWlrBuffer->Texture->memoryFence();
+    // }
 
     // Whether or not to nudge mango app when this commit is done.
     const bool mango_nudge =
@@ -5707,7 +5704,7 @@ void update_wayland_res(CommitDoneList_t *doneCommits, steamcompmgr_win_t *w,
       std::unique_lock<std::mutex> lock(waitListLock);
       WaitListEntry_t entry{
           .doneCommits = doneCommits,
-          .fence = fence,
+          .mapped_wlr_buffer = newCommit->mappedWlrBuffer,
           .mangoapp_nudge = mango_nudge,
           .commitID = newCommit->commitID,
       };
