@@ -352,9 +352,24 @@ struct vulkan_mapped_wlr_buffer {
 
 	void upload_buffer_to_texture(struct wlr_buffer *buf);
 
-	void poll_buffer();
-
 	~vulkan_mapped_wlr_buffer();
+
+	struct wait_handle {
+		union {
+			struct {
+				int Fence;
+			} DRM;
+			struct {
+				int LastCpySequence;
+			} DataPtr;
+		} HandleData;
+
+		bool IsDataPtr;
+
+		void wait();
+	};
+
+	wait_handle make_wait_handle();
 };
 
 

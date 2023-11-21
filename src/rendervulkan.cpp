@@ -3995,14 +3995,27 @@ vulkan_mapped_wlr_buffer::~vulkan_mapped_wlr_buffer() {
 	}
 }
 
-void vulkan_mapped_wlr_buffer::poll_buffer() {
+void vulkan_mapped_wlr_buffer::wait_handle::wait() {
 	if(IsDataPtr) {
-		g_device.wait(this->MappedData.DataPtr.LastCpySequence);
+		g_device.wait(this->HandleData.DataPtr.LastCpySequence);
 	} else {
-	  struct pollfd fd = {this->MappedData.DRM.fence, POLLIN, 0};
+	  struct pollfd fd = {this->HandleData.DRM.Fence, POLLIN, 0};
 	  (void)poll(&fd, 1, 100); 
-		close(this->MappedData.DRM.fence);
+		close(this->HandleData.DRM.Fence);
 	}
+}
+
+vulkan_mapped_wlr_buffer::wait_handle vulkan_mapped_wlr_buffer::make_wait_handle() {
+	vulkan_mapped_wlr_buffer::wait_handle wait_handle;
+	wait_handle.IsDataPtr = this->IsDataPtr;
+
+	if(this->IsDataPtr) {
+		wait_handle.HandleData.DataPtr.LastCpySequence = this->MappedData.DataPtr.LastCpySequence;
+	} else {
+		wait_handle.HandleData.DRM.Fence = this->MappedData.DRM.fence;	
+	}
+
+	return wait_handle;
 }
 
 void vulkan_mapped_wlr_buffer::upload_buffer_to_texture(struct wlr_buffer *buf) {

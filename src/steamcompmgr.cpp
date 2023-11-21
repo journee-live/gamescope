@@ -837,7 +837,7 @@ private:
 
 struct WaitListEntry_t {
   CommitDoneList_t *doneCommits;
-  std::shared_ptr<vulkan_mapped_wlr_buffer> mapped_wlr_buffer;
+  std::shared_ptr<vulkan_mapped_wlr_buffer::wait_handle> wait_handle;
   // Josh: Whether or not to nudge mangoapp that we got
   // a frame as soon as we know this commit is done.
   // This could technically be out of date if we change windows
@@ -885,7 +885,7 @@ retry : {
   // struct pollfd fd = {entry.fence, POLLIN, 0};
   printf("Polling frame now\n");
   int ret = 0;
-  entry.mapped_wlr_buffer->poll_buffer();
+  entry.wait_handle->wait();
   // int ret = poll(&fd, 1, 100);
   if (ret < 0) {
     printf("Poll failed: %i\n", ret);
@@ -5704,7 +5704,7 @@ void update_wayland_res(CommitDoneList_t *doneCommits, steamcompmgr_win_t *w,
       std::unique_lock<std::mutex> lock(waitListLock);
       WaitListEntry_t entry{
           .doneCommits = doneCommits,
-          .mapped_wlr_buffer = newCommit->mappedWlrBuffer,
+          .wait_handle = newCommit->mappedWlrBuffer->make_wait_handle(),
           .mangoapp_nudge = mango_nudge,
           .commitID = newCommit->commitID,
       };
