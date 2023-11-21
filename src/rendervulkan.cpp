@@ -746,7 +746,7 @@ bool CVulkanDevice::createDevice()
 
 	vk_log.infof( "physical device %s DRM format modifiers", m_bSupportsModifiers ? "supports" : "does not support" );
 
-	if ( hasDrmProps ) {
+	if ( requires_drm && hasDrmProps ) {
 		VkPhysicalDeviceDrmPropertiesEXT drmProps = {
 			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT,
 		};
