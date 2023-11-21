@@ -593,9 +593,11 @@ private:
 
 
 	VkSemaphore m_scratchTimelineSemaphore;
+
 	std::atomic<uint64_t> m_submissionSeqNo = { 0 };
 	std::vector<std::unique_ptr<CVulkanCmdBuffer>> m_unusedCmdBufs;
 	std::map<uint64_t, std::unique_ptr<CVulkanCmdBuffer>> m_pendingCmdBufs;
+	std::mutex m_commandBufferMutex;
 };
 
 bool CVulkanDevice::BInit(VkInstance instance, VkSurfaceKHR surface)
@@ -1434,6 +1436,7 @@ int32_t CVulkanDevice::findMemoryType( VkMemoryPropertyFlags properties, uint32_
 
 std::unique_ptr<CVulkanCmdBuffer> CVulkanDevice::commandBuffer()
 {
+	std::lock_guard<std::mutex> Protected(m_commandBufferMutex);
 	std::unique_ptr<CVulkanCmdBuffer> cmdBuffer;
 	if (m_unusedCmdBufs.empty())
 	{
@@ -1539,6 +1542,8 @@ void CVulkanDevice::waitIdle()
 
 void CVulkanDevice::resetCmdBuffers(uint64_t sequence)
 {
+	std::lock_guard<std::mutex> Protected(m_commandBufferMutex);
+	
 	auto last = m_pendingCmdBufs.find(sequence);
 	if (last == m_pendingCmdBufs.end())
 		return;
