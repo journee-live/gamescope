@@ -837,7 +837,7 @@ private:
 
 struct WaitListEntry_t {
   CommitDoneList_t *doneCommits;
-  std::shared_ptr<vulkan_mapped_wlr_buffer::wait_handle> wait_handle;
+  vulkan_mapped_wlr_buffer::wait_handle wait_handle;
   // Josh: Whether or not to nudge mangoapp that we got
   // a frame as soon as we know this commit is done.
   // This could technically be out of date if we change windows
@@ -885,7 +885,7 @@ retry : {
   // struct pollfd fd = {entry.fence, POLLIN, 0};
   printf("Polling frame now\n");
   int ret = 0;
-  entry.wait_handle->wait();
+  entry.wait_handle.wait();
   // int ret = poll(&fd, 1, 100);
   if (ret < 0) {
     printf("Poll failed: %i\n", ret);
