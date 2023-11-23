@@ -882,8 +882,6 @@ retry : {
   assert(bFound == true);
 
   gpuvis_trace_begin_ctx_printf(entry.commitID, "wait fence");
-  // struct pollfd fd = {entry.fence, POLLIN, 0};
-  printf("Polling frame now\n");
 
   int ret = entry.wait_handle.wait();
 
@@ -2370,8 +2368,22 @@ static void paint_all(bool async) {
 
     static int NextStreamerTexture = 0;
 
-    int StreamerTextureIdx = (NextStreamerTexture++) % 3;
-    pPipewireTexture = StreamerTextures[StreamerTextureIdx];
+    NextStreamerTexture += 1;
+    
+    int StreamerTextureIdx = -1;
+
+    // Find first streamer texture that we can copy to.
+    for(size_t TexIdxToCheck = 0; TexIdxToCheck < 3; ++TexIdxToCheck) {
+      int TexToCheck = (NextStreamerTexture + TexIdxToCheck) % 3;
+      if(sem_trywait(&shmbuf->is_tex_used_by_streamer[TexToCheck]) == 0) {
+        StreamerTextureIdx = TexToCheck;
+        break;
+      } 
+    }
+
+    if(StreamerTextureIdx >= 0) {
+      pPipewireTexture = StreamerTextures[StreamerTextureIdx];
+    }
 
     struct FrameInfo_t compositeFrameInfo = frameInfo;
 
@@ -2454,15 +2466,13 @@ static void paint_all(bool async) {
       {
         vulkan_present_to_window();
       }
-
-      auto tex = vulkan_get_last_output_image(false, bDefer);
       
-      if (tex) {
-        int fmt = tex->format();
+      if (pPipewireTexture) {
+        int fmt = pPipewireTexture->format();
 
         shmbuf->format = fmt;
-        shmbuf->width = tex->width();
-        shmbuf->height = tex->height();
+        shmbuf->width = pPipewireTexture->width();
+        shmbuf->height = pPipewireTexture->height();
 
         shmbuf->texture_handles[0] = StreamerTextures[0]->dmabuf().fd[0];
         shmbuf->texture_handles[1] = StreamerTextures[1]->dmabuf().fd[0];
@@ -2471,13 +2481,11 @@ static void paint_all(bool async) {
         shmbuf->texture_size = StreamerTextures[0]->dedicatedSize();
 
         if (sem_trywait(&shmbuf->wants_new_texture) == 0) {
-          int TextureIdx = StreamerTextureIdx - 1;
+          static int NextFrameTexture = -1;
           
-          if(TextureIdx < 0) {
-            TextureIdx = 2;
-          }
-
-          shmbuf->latest_texture = TextureIdx;
+          shmbuf->latest_texture = NextFrameTexture;
+          NextFrameTexture = StreamerTextureIdx;
+          
           sem_post(&shmbuf->new_texture);
         }
       }
@@ -6639,6 +6647,13 @@ void steamcompmgr_main(int argc, char **argv) {
   if (sem_init(&shmbuf->wants_new_texture, 1, 0) == -1) {
     printf("Failed to allocate sem\n");
     exit(1);
+  }
+
+  for(int sem_idx = 0; sem_idx < 3; ++sem_idx) {
+    if(sem_init(&shmbuf->is_tex_used_by_streamer[sem_idx], 1, 0) == -1) {
+      printf("Failed to initialize is tex used by streamer\n");
+      exit(1);
+    } 
   }
 
   printf("MMap success\n");

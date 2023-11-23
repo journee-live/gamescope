@@ -40,8 +40,8 @@ struct gamescope_shmbuf {
   int32_t width;
   int32_t height;
 
-  // uint8_t texture_mem[4069 * 4096 * 4];
 
+  sem_t is_tex_used_by_streamer[3];
   int32_t texture_handles[3];
   int32_t latest_texture;
 
