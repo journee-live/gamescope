@@ -366,7 +366,7 @@ struct vulkan_mapped_wlr_buffer {
 
 		bool IsDataPtr;
 
-		void wait();
+		int wait();
 	};
 
 	wait_handle make_wait_handle();

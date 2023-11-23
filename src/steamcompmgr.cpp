@@ -884,9 +884,9 @@ retry : {
   gpuvis_trace_begin_ctx_printf(entry.commitID, "wait fence");
   // struct pollfd fd = {entry.fence, POLLIN, 0};
   printf("Polling frame now\n");
-  int ret = 0;
-  entry.wait_handle.wait();
-  // int ret = poll(&fd, 1, 100);
+
+  int ret = entry.wait_handle.wait();
+
   if (ret < 0) {
     printf("Poll failed: %i\n", ret);
     xwm_log.errorf_errno("failed to poll fence FD");
@@ -894,16 +894,11 @@ retry : {
   gpuvis_trace_end_ctx_printf(entry.commitID, "wait fence");
 
   uint64_t frametime;
-    uint64_t now = get_time_in_nanos();
-    static uint64_t lastFrameTime = now;
-    frametime = now - lastFrameTime;
-    lastFrameTime = now;
-
-  printf("FrameTime: %d\n", frametime);
-  
-   if (entry.mangoapp_nudge) {
- }
-
+  uint64_t now = get_time_in_nanos();
+  static uint64_t lastFrameTime = now;
+  frametime = now - lastFrameTime;
+  lastFrameTime = now;
+ 
   {
     std::unique_lock<std::mutex> lock(entry.doneCommits->listCommitsDoneLock);
     entry.doneCommits->listCommitsDone.push_back(entry.commitID);
@@ -2475,9 +2470,14 @@ static void paint_all(bool async) {
 
         shmbuf->texture_size = StreamerTextures[0]->dedicatedSize();
 
-        // printf("Mapped: %i", mapped);
         if (sem_trywait(&shmbuf->wants_new_texture) == 0) {
-          shmbuf->latest_texture = StreamerTextureIdx;
+          int TextureIdx = StreamerTextureIdx - 1;
+          
+          if(TextureIdx < 0) {
+            TextureIdx = 2;
+          }
+
+          shmbuf->latest_texture = TextureIdx;
           sem_post(&shmbuf->new_texture);
         }
       }
@@ -2573,14 +2573,6 @@ static void paint_all(bool async) {
         int WasInitialized;
         // std::shared_ptr<CVulkanTexture> Textures[2];
       };
-
-      static StreamerData Data = {0};
-      if (!Data.WasInitialized) {
-        printf("Initializing streamer data\n");
-        Data.WasInitialized = 1;
-      }
-
-      printf("Initialize: %i\n", Data.WasInitialized);
 
       int ret = drm_prepare(&g_DRM, async, &presentCompFrameInfo);
 

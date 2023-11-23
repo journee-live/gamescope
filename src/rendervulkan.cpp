@@ -744,7 +744,7 @@ bool CVulkanDevice::createDevice()
 			supportsForeignQueue = true;
 	}
 
-  bool requires_drm = !BIsNested();
+  bool requires_drm = true; //!BIsNested();
 
 	vk_log.infof( "physical device %s DRM format modifiers", m_bSupportsModifiers ? "supports" : "does not support" );
 
@@ -4000,13 +4000,15 @@ vulkan_mapped_wlr_buffer::~vulkan_mapped_wlr_buffer() {
 	}
 }
 
-void vulkan_mapped_wlr_buffer::wait_handle::wait() {
+int vulkan_mapped_wlr_buffer::wait_handle::wait() {
 	if(IsDataPtr) {
 		g_device.wait(this->HandleData.DataPtr.LastCpySequence);
+		return 0;
 	} else {
 	  struct pollfd fd = {this->HandleData.DRM.Fence, POLLIN, 0};
-	  (void)poll(&fd, 1, 100); 
+	  int res = poll(&fd, 1, 100); 
 		close(this->HandleData.DRM.Fence);
+		return res;
 	}
 }
 
