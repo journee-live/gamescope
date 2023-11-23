@@ -3129,7 +3129,7 @@ static bool vulkan_make_output_images( VulkanOutput_t *pOutput )
 	return true;
 }
 
-void vulkan_allocate_streamer_textures(std::shared_ptr<CVulkanTexture> out_textures[3]  ) {
+void vulkan_allocate_streamer_textures(std::shared_ptr<CVulkanTexture> out_textures[4]  ) {
 
 	CVulkanTexture::createFlags outputImageflags;
 	outputImageflags.bFlippable = !BIsNested();
@@ -3140,7 +3140,7 @@ void vulkan_allocate_streamer_textures(std::shared_ptr<CVulkanTexture> out_textu
 	outputImageflags.bSwapchain = BIsVRSession();
 	outputImageflags.bExportable = true;
 
-  for (size_t textureIdx = 0; textureIdx < 3; ++textureIdx) {
+  for (size_t textureIdx = 0; textureIdx < 4; ++textureIdx) {
   	out_textures[textureIdx] = std::make_shared<CVulkanTexture>();
   	out_textures[textureIdx]->BInit( g_nOutputWidth, g_nOutputHeight, 1u, VulkanFormatToDRM(g_output.outputFormat), outputImageflags );
 	}

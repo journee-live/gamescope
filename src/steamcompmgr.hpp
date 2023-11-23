@@ -32,6 +32,7 @@ struct steamcompmgr_win_t;
 struct xwayland_ctx_t;
 class gamescope_xwayland_server_t;
 
+#define NUM_GAMESCOPE_TEXTURES (4)
 struct gamescope_shmbuf {
   int32_t version;
   sem_t new_texture;       /* POSIX unnamed semaphore */
@@ -41,11 +42,14 @@ struct gamescope_shmbuf {
   int32_t height;
 
 
-  sem_t is_tex_used_by_streamer[3];
-  int32_t texture_handles[3];
+  sem_t is_tex_used_by_streamer[NUM_GAMESCOPE_TEXTURES];
+  int32_t texture_handles[NUM_GAMESCOPE_TEXTURES];
+
   int32_t latest_texture;
 
   int32_t texture_size;
+
+  pthread_mutex_t lock;
 };
 
 static const uint32_t g_zposBase = 0;

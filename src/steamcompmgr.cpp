@@ -39,6 +39,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <pthread.h>
 #include <queue>
 #include <semaphore.h>
 #include <string>
@@ -2272,9 +2273,20 @@ static void paint_all(bool async) {
   pw_buffer = dequeue_pipewire_buffer();
 #endif
 
-  static std::shared_ptr<CVulkanTexture> StreamerTextures[3] = {0};
+  static std::shared_ptr<CVulkanTexture> StreamerTextures[NUM_GAMESCOPE_TEXTURES] = {0};
   if (StreamerTextures[0] == nullptr) {
     vulkan_allocate_streamer_textures(StreamerTextures);
+
+    int fmt = StreamerTextures[0]->format();
+
+    shmbuf->format = fmt;
+    shmbuf->width = StreamerTextures[0]->width();
+    shmbuf->height = StreamerTextures[0]->height();
+
+    for(int GamescopeTexIdx = 0; GamescopeTexIdx < NUM_GAMESCOPE_TEXTURES; ++GamescopeTexIdx) {
+      shmbuf->texture_handles[GamescopeTexIdx] = StreamerTextures[GamescopeTexIdx]->dmabuf().fd[0]; 
+    }
+    shmbuf->texture_size = StreamerTextures[0]->dedicatedSize();
   }
 
   int nDynamicRefresh = g_nDynamicRefreshRate[drm_get_screen_type(&g_DRM)];
@@ -2367,19 +2379,29 @@ static void paint_all(bool async) {
 #endif
 
     static int NextStreamerTexture = 0;
-
     NextStreamerTexture += 1;
     
     int StreamerTextureIdx = -1;
 
+    pthread_mutex_lock(&shmbuf->lock);
+ 
+    int LastTex = NextStreamerTexture;
     // Find first streamer texture that we can copy to.
-    for(size_t TexIdxToCheck = 0; TexIdxToCheck < 3; ++TexIdxToCheck) {
-      int TexToCheck = (NextStreamerTexture + TexIdxToCheck) % 3;
-      if(sem_trywait(&shmbuf->is_tex_used_by_streamer[TexToCheck]) == 0) {
+    for(; NextStreamerTexture < LastTex + NUM_GAMESCOPE_TEXTURES; ++NextStreamerTexture) {
+
+      int TexToCheck = (NextStreamerTexture) % NUM_GAMESCOPE_TEXTURES;
+      
+      int Value = 0;
+      sem_getvalue(&shmbuf->is_tex_used_by_streamer[TexToCheck], &Value);
+
+      // If the semaphore is not signalled we can write to it.
+      if(Value == 0) {
         StreamerTextureIdx = TexToCheck;
         break;
-      } 
+      }
     }
+
+    pthread_mutex_unlock(&shmbuf->lock);
 
     if(StreamerTextureIdx >= 0) {
       pPipewireTexture = StreamerTextures[StreamerTextureIdx];
@@ -2468,24 +2490,23 @@ static void paint_all(bool async) {
       }
       
       if (pPipewireTexture) {
-        int fmt = pPipewireTexture->format();
+        pthread_mutex_lock(&shmbuf->lock);
+        
 
-        shmbuf->format = fmt;
-        shmbuf->width = pPipewireTexture->width();
-        shmbuf->height = pPipewireTexture->height();
-
-        shmbuf->texture_handles[0] = StreamerTextures[0]->dmabuf().fd[0];
-        shmbuf->texture_handles[1] = StreamerTextures[1]->dmabuf().fd[0];
-        shmbuf->texture_handles[2] = StreamerTextures[2]->dmabuf().fd[0];
-
-        shmbuf->texture_size = StreamerTextures[0]->dedicatedSize();
+        bool SignalTexture = false;
 
         if (sem_trywait(&shmbuf->wants_new_texture) == 0) {
           static int NextFrameTexture = -1;
-          
+
           shmbuf->latest_texture = NextFrameTexture;
           NextFrameTexture = StreamerTextureIdx;
-          
+
+          SignalTexture = true;
+        }
+        
+        pthread_mutex_unlock(&shmbuf->lock);
+
+        if(SignalTexture) {
           sem_post(&shmbuf->new_texture);
         }
       }
@@ -2575,7 +2596,6 @@ static void paint_all(bool async) {
       int32_t height =
           presentCompFrameInfo.layers[0].tex.get()->contentHeight();
       int32_t format = presentCompFrameInfo.layers[0].tex.get()->format();
-      printf("Vulkan Width: %i Height: %i Format: %i\n", width, height, format);
 
       struct StreamerData {
         int WasInitialized;
@@ -6649,13 +6669,22 @@ void steamcompmgr_main(int argc, char **argv) {
     exit(1);
   }
 
-  for(int sem_idx = 0; sem_idx < 3; ++sem_idx) {
+  for(int sem_idx = 0; sem_idx < NUM_GAMESCOPE_TEXTURES; ++sem_idx) {
     if(sem_init(&shmbuf->is_tex_used_by_streamer[sem_idx], 1, 0) == -1) {
       printf("Failed to initialize is tex used by streamer\n");
       exit(1);
     } 
   }
 
+  pthread_mutexattr_t att;
+  pthread_mutexattr_init(&att);
+  pthread_mutexattr_setrobust(&att, PTHREAD_MUTEX_ROBUST);
+  pthread_mutexattr_setpshared(&att, PTHREAD_PROCESS_SHARED);
+  if(pthread_mutex_init(&shmbuf->lock, &att) == -1) {
+    printf("Failed to initialize shmbuf lock\n");
+    exit(1);
+  }
+ 
   printf("MMap success\n");
 
   // Reset getopt() state
