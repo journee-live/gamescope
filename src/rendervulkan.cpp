@@ -818,9 +818,9 @@ bool CVulkanDevice::createDevice()
 	float queuePriorities = 1.0f;
 
 	VkDeviceQueueGlobalPriorityCreateInfoEXT queueCreateInfoEXT = {
-		.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_EXT,
+		.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_KHR,
 		.pNext = nullptr,
-		.globalPriority = VK_QUEUE_GLOBAL_PRIORITY_REALTIME_EXT
+		.globalPriority = VK_QUEUE_GLOBAL_PRIORITY_HIGH_EXT
 	};
 
 	VkDeviceQueueCreateInfo queueCreateInfo = {
