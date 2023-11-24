@@ -2496,10 +2496,10 @@ static void paint_all(bool async) {
         bool SignalTexture = false;
 
         if (sem_trywait(&shmbuf->wants_new_texture) == 0) {
-          static int NextFrameTexture = -1;
+          // static int NextFrameTexture = -1;
 
-          shmbuf->latest_texture = NextFrameTexture;
-          NextFrameTexture = StreamerTextureIdx;
+          shmbuf->latest_texture = StreamerTextureIdx; //NextFrameTexture;
+          // NextFrameTexture = StreamerTextureIdx;
 
           SignalTexture = true;
         }

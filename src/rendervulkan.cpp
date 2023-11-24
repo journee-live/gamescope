@@ -698,6 +698,8 @@ bool CVulkanDevice::selectPhysDev(VkSurfaceKHR surface)
 				}
 
 				m_queueFamily = computeOnlyIndex == ~0u ? generalIndex : computeOnlyIndex;
+				vk_log.infof( "Using %s queue", computeOnlyIndex != ~0u ? "Compute" : "Graphics");
+	
 				m_physDev = cphysDev;
 			}
 		}
@@ -3645,154 +3647,155 @@ uint64_t defer_sequence = 0;
 
 bool vulkan_composite( const struct FrameInfo_t *frameInfo, std::shared_ptr<CVulkanTexture> pPipewireTexture, bool partial, bool defer )
 {
-	if ( defer_wait_thread )
-	{
-		defer_wait_thread->join();
-		defer_wait_thread = nullptr;
+	// if ( defer_wait_thread )
+	// {
+	// 	defer_wait_thread->join();
+	// 	defer_wait_thread = nullptr;
 
-		g_device.resetCmdBuffers(defer_sequence);
-		defer_sequence = 0;
-	}
+	// 	g_device.resetCmdBuffers(defer_sequence);
+	// 	defer_sequence = 0;
+	// }
 
 	// printf("Partial: %i\n", partial);
-	auto compositeImage = partial ? g_output.outputImagesPartialOverlay[ g_output.nOutImage ] : g_output.outputImages[ g_output.nOutImage ];
+	// auto compositeImage = partial ? g_output.outputImagesPartialOverlay[ g_output.nOutImage ] : g_output.outputImages[ g_output.nOutImage ];
 
 	auto cmdBuffer = g_device.commandBuffer();
 
-	for (uint32_t i = 0; i < EOTF_Count; i++)
-		cmdBuffer->bindColorMgmtLuts(i, frameInfo->shaperLut[i], frameInfo->lut3D[i]);
+	// for (uint32_t i = 0; i < EOTF_Count; i++)
+	// 	cmdBuffer->bindColorMgmtLuts(i, frameInfo->shaperLut[i], frameInfo->lut3D[i]);
 
-	if ( frameInfo->useFSRLayer0 )
-	{
-		uint32_t inputX = frameInfo->layers[0].tex->width();
-		uint32_t inputY = frameInfo->layers[0].tex->height();
+	// if ( frameInfo->useFSRLayer0 )
+	// {
+	// 	uint32_t inputX = frameInfo->layers[0].tex->width();
+	// 	uint32_t inputY = frameInfo->layers[0].tex->height();
 
-		uint32_t tempX = frameInfo->layers[0].integerWidth();
-		uint32_t tempY = frameInfo->layers[0].integerHeight();
+	// 	uint32_t tempX = frameInfo->layers[0].integerWidth();
+	// 	uint32_t tempY = frameInfo->layers[0].integerHeight();
 
-		update_tmp_images(tempX, tempY);
+	// 	update_tmp_images(tempX, tempY);
 
-		cmdBuffer->bindPipeline(g_device.pipeline(SHADER_TYPE_EASU));
-		cmdBuffer->bindTarget(g_output.tmpOutput);
-		cmdBuffer->bindTexture(0, frameInfo->layers[0].tex);
-		cmdBuffer->setTextureSrgb(0, true);
-		cmdBuffer->setSamplerUnnormalized(0, false);
-		cmdBuffer->setSamplerNearest(0, false);
-		cmdBuffer->pushConstants<EasuPushData_t>(inputX, inputY, tempX, tempY);
+	// 	cmdBuffer->bindPipeline(g_device.pipeline(SHADER_TYPE_EASU));
+	// 	cmdBuffer->bindTarget(g_output.tmpOutput);
+	// 	cmdBuffer->bindTexture(0, frameInfo->layers[0].tex);
+	// 	cmdBuffer->setTextureSrgb(0, true);
+	// 	cmdBuffer->setSamplerUnnormalized(0, false);
+	// 	cmdBuffer->setSamplerNearest(0, false);
+	// 	cmdBuffer->pushConstants<EasuPushData_t>(inputX, inputY, tempX, tempY);
 
-		int pixelsPerGroup = 16;
+	// 	int pixelsPerGroup = 16;
 
-		cmdBuffer->dispatch(div_roundup(tempX, pixelsPerGroup), div_roundup(tempY, pixelsPerGroup));
+	// 	cmdBuffer->dispatch(div_roundup(tempX, pixelsPerGroup), div_roundup(tempY, pixelsPerGroup));
 
-		cmdBuffer->bindPipeline(g_device.pipeline(SHADER_TYPE_RCAS, frameInfo->layerCount, frameInfo->ycbcrMask() & ~1, 0u, frameInfo->colorspaceMask(), g_ColorMgmt.current.outputEncodingEOTF ));
-		bind_all_layers(cmdBuffer.get(), frameInfo);
-		cmdBuffer->bindTexture(0, g_output.tmpOutput);
-		cmdBuffer->setTextureSrgb(0, true);
-		cmdBuffer->setSamplerUnnormalized(0, false);
-		cmdBuffer->setSamplerNearest(0, false);
-		cmdBuffer->bindTarget(compositeImage);
-		cmdBuffer->pushConstants<RcasPushData_t>(frameInfo, g_upscaleFilterSharpness / 10.0f);
+	// 	cmdBuffer->bindPipeline(g_device.pipeline(SHADER_TYPE_RCAS, frameInfo->layerCount, frameInfo->ycbcrMask() & ~1, 0u, frameInfo->colorspaceMask(), g_ColorMgmt.current.outputEncodingEOTF ));
+	// 	bind_all_layers(cmdBuffer.get(), frameInfo);
+	// 	cmdBuffer->bindTexture(0, g_output.tmpOutput);
+	// 	cmdBuffer->setTextureSrgb(0, true);
+	// 	cmdBuffer->setSamplerUnnormalized(0, false);
+	// 	cmdBuffer->setSamplerNearest(0, false);
+	// 	cmdBuffer->bindTarget(compositeImage);
+	// 	cmdBuffer->pushConstants<RcasPushData_t>(frameInfo, g_upscaleFilterSharpness / 10.0f);
 
-		cmdBuffer->dispatch(div_roundup(currentOutputWidth, pixelsPerGroup), div_roundup(currentOutputHeight, pixelsPerGroup));
-	}
-	else if ( frameInfo->useNISLayer0 )
-	{
-		uint32_t inputX = frameInfo->layers[0].tex->width();
-		uint32_t inputY = frameInfo->layers[0].tex->height();
+	// 	cmdBuffer->dispatch(div_roundup(currentOutputWidth, pixelsPerGroup), div_roundup(currentOutputHeight, pixelsPerGroup));
+	// }
+	// else if ( frameInfo->useNISLayer0 )
+	// {
+	// 	uint32_t inputX = frameInfo->layers[0].tex->width();
+	// 	uint32_t inputY = frameInfo->layers[0].tex->height();
 
-		uint32_t tempX = frameInfo->layers[0].integerWidth();
-		uint32_t tempY = frameInfo->layers[0].integerHeight();
+	// 	uint32_t tempX = frameInfo->layers[0].integerWidth();
+	// 	uint32_t tempY = frameInfo->layers[0].integerHeight();
 
-		update_tmp_images(tempX, tempY);
+	// 	update_tmp_images(tempX, tempY);
 
-		float nisSharpness = (20 - g_upscaleFilterSharpness) / 20.0f;
+	// 	float nisSharpness = (20 - g_upscaleFilterSharpness) / 20.0f;
 
-		cmdBuffer->bindPipeline(g_device.pipeline(SHADER_TYPE_NIS));
-		cmdBuffer->bindTarget(g_output.tmpOutput);
-		cmdBuffer->bindTexture(0, frameInfo->layers[0].tex);
-		cmdBuffer->setTextureSrgb(0, true);
-		cmdBuffer->setSamplerUnnormalized(0, false);
-		cmdBuffer->setSamplerNearest(0, false);
-		cmdBuffer->bindTexture(VKR_NIS_COEF_SCALER_SLOT, g_output.nisScalerImage);
-		cmdBuffer->setSamplerUnnormalized(VKR_NIS_COEF_SCALER_SLOT, false);
-		cmdBuffer->setSamplerNearest(VKR_NIS_COEF_SCALER_SLOT, false);
-		cmdBuffer->bindTexture(VKR_NIS_COEF_USM_SLOT, g_output.nisUsmImage);
-		cmdBuffer->setSamplerUnnormalized(VKR_NIS_COEF_USM_SLOT, false);
-		cmdBuffer->setSamplerNearest(VKR_NIS_COEF_USM_SLOT, false);
-		cmdBuffer->pushConstants<NisPushData_t>(inputX, inputY, tempX, tempY, nisSharpness);
+	// 	cmdBuffer->bindPipeline(g_device.pipeline(SHADER_TYPE_NIS));
+	// 	cmdBuffer->bindTarget(g_output.tmpOutput);
+	// 	cmdBuffer->bindTexture(0, frameInfo->layers[0].tex);
+	// 	cmdBuffer->setTextureSrgb(0, true);
+	// 	cmdBuffer->setSamplerUnnormalized(0, false);
+	// 	cmdBuffer->setSamplerNearest(0, false);
+	// 	cmdBuffer->bindTexture(VKR_NIS_COEF_SCALER_SLOT, g_output.nisScalerImage);
+	// 	cmdBuffer->setSamplerUnnormalized(VKR_NIS_COEF_SCALER_SLOT, false);
+	// 	cmdBuffer->setSamplerNearest(VKR_NIS_COEF_SCALER_SLOT, false);
+	// 	cmdBuffer->bindTexture(VKR_NIS_COEF_USM_SLOT, g_output.nisUsmImage);
+	// 	cmdBuffer->setSamplerUnnormalized(VKR_NIS_COEF_USM_SLOT, false);
+	// 	cmdBuffer->setSamplerNearest(VKR_NIS_COEF_USM_SLOT, false);
+	// 	cmdBuffer->pushConstants<NisPushData_t>(inputX, inputY, tempX, tempY, nisSharpness);
 
-		int pixelsPerGroupX = 32;
-		int pixelsPerGroupY = 24;
+	// 	int pixelsPerGroupX = 32;
+	// 	int pixelsPerGroupY = 24;
 
-		cmdBuffer->dispatch(div_roundup(tempX, pixelsPerGroupX), div_roundup(tempY, pixelsPerGroupY));
+	// 	cmdBuffer->dispatch(div_roundup(tempX, pixelsPerGroupX), div_roundup(tempY, pixelsPerGroupY));
 
-		struct FrameInfo_t nisFrameInfo = *frameInfo;
-		nisFrameInfo.layers[0].tex = g_output.tmpOutput;
-		nisFrameInfo.layers[0].scale.x = 1.0f;
-		nisFrameInfo.layers[0].scale.y = 1.0f;
+	// 	struct FrameInfo_t nisFrameInfo = *frameInfo;
+	// 	nisFrameInfo.layers[0].tex = g_output.tmpOutput;
+	// 	nisFrameInfo.layers[0].scale.x = 1.0f;
+	// 	nisFrameInfo.layers[0].scale.y = 1.0f;
 
-		cmdBuffer->bindPipeline( g_device.pipeline(SHADER_TYPE_BLIT, nisFrameInfo.layerCount, nisFrameInfo.ycbcrMask()));
-		bind_all_layers(cmdBuffer.get(), &nisFrameInfo);
-		cmdBuffer->bindTarget(compositeImage);
-		cmdBuffer->pushConstants<BlitPushData_t>(&nisFrameInfo);
+	// 	cmdBuffer->bindPipeline( g_device.pipeline(SHADER_TYPE_BLIT, nisFrameInfo.layerCount, nisFrameInfo.ycbcrMask()));
+	// 	bind_all_layers(cmdBuffer.get(), &nisFrameInfo);
+	// 	cmdBuffer->bindTarget(compositeImage);
+	// 	cmdBuffer->pushConstants<BlitPushData_t>(&nisFrameInfo);
 
-		int pixelsPerGroup = 8;
+	// 	int pixelsPerGroup = 8;
 
-		cmdBuffer->dispatch(div_roundup(currentOutputWidth, pixelsPerGroup), div_roundup(currentOutputHeight, pixelsPerGroup));
-	}
-	else if ( frameInfo->blurLayer0 )
-	{
-		update_tmp_images(currentOutputWidth, currentOutputHeight);
+	// 	cmdBuffer->dispatch(div_roundup(currentOutputWidth, pixelsPerGroup), div_roundup(currentOutputHeight, pixelsPerGroup));
+	// }
+	// else if ( frameInfo->blurLayer0 )
+	// {
+	// 	update_tmp_images(currentOutputWidth, currentOutputHeight);
 
-		ShaderType type = SHADER_TYPE_BLUR_FIRST_PASS;
+	// 	ShaderType type = SHADER_TYPE_BLUR_FIRST_PASS;
 
-		uint32_t blur_layer_count = 1;
-		// Also blur the override on top if we have one.
-		if (frameInfo->layerCount >= 2 && frameInfo->layers[1].zpos == g_zposOverride)
-			blur_layer_count++;
+	// 	uint32_t blur_layer_count = 1;
+	// 	// Also blur the override on top if we have one.
+	// 	if (frameInfo->layerCount >= 2 && frameInfo->layers[1].zpos == g_zposOverride)
+	// 		blur_layer_count++;
 
-		cmdBuffer->bindPipeline(g_device.pipeline(type, blur_layer_count, frameInfo->ycbcrMask() & 0x3u, 0, frameInfo->colorspaceMask(), g_ColorMgmt.current.outputEncodingEOTF ));
-		cmdBuffer->bindTarget(g_output.tmpOutput);
-		for (uint32_t i = 0; i < blur_layer_count; i++)
-		{
-			cmdBuffer->bindTexture(i, frameInfo->layers[i].tex);
-			cmdBuffer->setTextureSrgb(i, false);
-			cmdBuffer->setSamplerUnnormalized(i, true);
-			cmdBuffer->setSamplerNearest(i, false);
-		}
-		cmdBuffer->pushConstants<BlitPushData_t>(frameInfo);
+	// 	cmdBuffer->bindPipeline(g_device.pipeline(type, blur_layer_count, frameInfo->ycbcrMask() & 0x3u, 0, frameInfo->colorspaceMask(), g_ColorMgmt.current.outputEncodingEOTF ));
+	// 	cmdBuffer->bindTarget(g_output.tmpOutput);
+	// 	for (uint32_t i = 0; i < blur_layer_count; i++)
+	// 	{
+	// 		cmdBuffer->bindTexture(i, frameInfo->layers[i].tex);
+	// 		cmdBuffer->setTextureSrgb(i, false);
+	// 		cmdBuffer->setSamplerUnnormalized(i, true);
+	// 		cmdBuffer->setSamplerNearest(i, false);
+	// 	}
+	// 	cmdBuffer->pushConstants<BlitPushData_t>(frameInfo);
 
-		int pixelsPerGroup = 8;
+	// 	int pixelsPerGroup = 8;
 
-		cmdBuffer->dispatch(div_roundup(currentOutputWidth, pixelsPerGroup), div_roundup(currentOutputHeight, pixelsPerGroup));
+	// 	cmdBuffer->dispatch(div_roundup(currentOutputWidth, pixelsPerGroup), div_roundup(currentOutputHeight, pixelsPerGroup));
 
-		bool useSrgbView = frameInfo->layers[0].colorspace == GAMESCOPE_APP_TEXTURE_COLORSPACE_LINEAR;
+	// 	bool useSrgbView = frameInfo->layers[0].colorspace == GAMESCOPE_APP_TEXTURE_COLORSPACE_LINEAR;
 
-		type = frameInfo->blurLayer0 == BLUR_MODE_COND ? SHADER_TYPE_BLUR_COND : SHADER_TYPE_BLUR;
-		cmdBuffer->bindPipeline(g_device.pipeline(type, frameInfo->layerCount, frameInfo->ycbcrMask(), blur_layer_count, frameInfo->colorspaceMask(), g_ColorMgmt.current.outputEncodingEOTF ));
-		bind_all_layers(cmdBuffer.get(), frameInfo);
-		cmdBuffer->bindTarget(compositeImage);
-		cmdBuffer->bindTexture(VKR_BLUR_EXTRA_SLOT, g_output.tmpOutput);
-		cmdBuffer->setTextureSrgb(VKR_BLUR_EXTRA_SLOT, !useSrgbView); // Inverted because it chooses whether to view as linear (sRGB view) or sRGB (raw view). It's horrible. I need to change it.
-		cmdBuffer->setSamplerUnnormalized(VKR_BLUR_EXTRA_SLOT, true);
-		cmdBuffer->setSamplerNearest(VKR_BLUR_EXTRA_SLOT, false);
+	// 	type = frameInfo->blurLayer0 == BLUR_MODE_COND ? SHADER_TYPE_BLUR_COND : SHADER_TYPE_BLUR;
+	// 	cmdBuffer->bindPipeline(g_device.pipeline(type, frameInfo->layerCount, frameInfo->ycbcrMask(), blur_layer_count, frameInfo->colorspaceMask(), g_ColorMgmt.current.outputEncodingEOTF ));
+	// 	bind_all_layers(cmdBuffer.get(), frameInfo);
+	// 	cmdBuffer->bindTarget(compositeImage);
+	// 	cmdBuffer->bindTexture(VKR_BLUR_EXTRA_SLOT, g_output.tmpOutput);
+	// 	cmdBuffer->setTextureSrgb(VKR_BLUR_EXTRA_SLOT, !useSrgbView); // Inverted because it chooses whether to view as linear (sRGB view) or sRGB (raw view). It's horrible. I need to change it.
+	// 	cmdBuffer->setSamplerUnnormalized(VKR_BLUR_EXTRA_SLOT, true);
+	// 	cmdBuffer->setSamplerNearest(VKR_BLUR_EXTRA_SLOT, false);
 
-		cmdBuffer->dispatch(div_roundup(currentOutputWidth, pixelsPerGroup), div_roundup(currentOutputHeight, pixelsPerGroup));
-	}
-	else
-	{
-		cmdBuffer->bindPipeline( g_device.pipeline(SHADER_TYPE_BLIT, frameInfo->layerCount, frameInfo->ycbcrMask(), 0u, frameInfo->colorspaceMask(), g_ColorMgmt.current.outputEncodingEOTF ));
-		bind_all_layers(cmdBuffer.get(), frameInfo);
-		cmdBuffer->bindTarget(compositeImage);
-		cmdBuffer->pushConstants<BlitPushData_t>(frameInfo);
+	// 	cmdBuffer->dispatch(div_roundup(currentOutputWidth, pixelsPerGroup), div_roundup(currentOutputHeight, pixelsPerGroup));
+	// }
+	// else
+	// {
+	// 	cmdBuffer->bindPipeline( g_device.pipeline(SHADER_TYPE_BLIT, frameInfo->layerCount, frameInfo->ycbcrMask(), 0u, frameInfo->colorspaceMask(), g_ColorMgmt.current.outputEncodingEOTF ));
+	// 	bind_all_layers(cmdBuffer.get(), frameInfo);
+	// 	cmdBuffer->bindTarget(compositeImage);
+	// 	cmdBuffer->pushConstants<BlitPushData_t>(frameInfo);
 
-		const int pixelsPerGroup = 8;
+	// 	const int pixelsPerGroup = 8;
 
-		cmdBuffer->dispatch(div_roundup(currentOutputWidth, pixelsPerGroup), div_roundup(currentOutputHeight, pixelsPerGroup));
-	}
+	// 	cmdBuffer->dispatch(div_roundup(currentOutputWidth, pixelsPerGroup), div_roundup(currentOutputHeight, pixelsPerGroup));
+	// }
 
 	if ( pPipewireTexture != nullptr )
 	{
+		std::shared_ptr<CVulkanTexture> compositeImage = frameInfo->layers[0].tex;
 		if (compositeImage->format() == pPipewireTexture->format() &&
 			compositeImage->width() == pPipewireTexture->width() &&
 		    compositeImage->height() == pPipewireTexture->height()) {
@@ -3839,18 +3842,18 @@ bool vulkan_composite( const struct FrameInfo_t *frameInfo, std::shared_ptr<CVul
 
 	uint64_t sequence = g_device.submit(std::move(cmdBuffer));
 
-	if ( defer )
-	{
-		defer_wait_thread = std::make_unique<std::thread>([sequence]
-		{
-			g_device.wait(sequence, false);
-		});
-		defer_sequence = sequence;
-	}
-	else
-	{
+	// if ( defer )
+	// {
+	// 	defer_wait_thread = std::make_unique<std::thread>([sequence]
+	// 	{
+	// 		g_device.wait(sequence, false);
+	// 	});
+	// 	defer_sequence = sequence;
+	// }
+	// else
+	// {
 		g_device.wait(sequence);
-	}
+	// }
 
 	if ( !BIsSDLSession() )
 	{
